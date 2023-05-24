@@ -646,3 +646,44 @@ func (s WatchEvent) NewMetric() telegraf.Metric {
 	m := metric.New(meas, t, f, time.Now())
 	return m
 }
+
+type WorkflowJob struct {
+	WorkflowName    string `json:"workflow_name"`
+	Status          string `json:"status"`
+	RunnerGroupName string `json:"runner_group_name"`
+}
+
+type WorkflowJobEvent struct {
+	Action      string      `json:"action"`
+	WorkflowJob WorkflowJob `json:"workflow_job"`
+	Repository  Repository  `json:"repository"`
+	Sender      Sender      `json:"sender"`
+}
+
+func bla(c1, c2 string) (ret int) {
+	ret = 0
+	if c1 == c2 {
+		ret = 1
+	}
+	return ret
+}
+
+func (s WorkflowJobEvent) NewMetric() telegraf.Metric {
+	event := "workflow_job"
+	t := map[string]string{
+		"event":             event,
+		"repository":        s.Repository.Repository,
+		"private":           fmt.Sprintf("%v", s.Repository.Private),
+		"user":              s.Sender.User,
+		"admin":             fmt.Sprintf("%v", s.Sender.Admin),
+		"workflow_name":     s.WorkflowJob.WorkflowName,
+		"runner_group_name": s.WorkflowJob.RunnerGroupName,
+	}
+	f := map[string]interface{}{
+		"queued":      bla(s.Action, "queued"),
+		"completed":   bla(s.Action, "completed"),
+		"in_progress": bla(s.Action, "in_progress"),
+	}
+	m := metric.New(meas, t, f, time.Now())
+	return m
+}

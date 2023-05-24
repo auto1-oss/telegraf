@@ -127,6 +127,8 @@ func (gh *GithubWebhook) NewEvent(data []byte, name string) (Event, error) {
 		return generateEvent(data, &TeamAddEvent{})
 	case "watch":
 		return generateEvent(data, &WatchEvent{})
+	case "workflow_job":
+		return generateEvent(data, &WorkflowJobEvent{})
 	}
 	return nil, &newEventError{"Not a recognized event type"}
 }

@@ -133,3 +133,7 @@ func TestCheckSignatureFailed(t *testing.T) {
 		t.Errorf("check signature failed")
 	}
 }
+
+func TestWorkflowJobEvent(t *testing.T) {
+	GithubWebhookRequest("workflow_job", WorkflowJobEventJSON(), t)
+}
