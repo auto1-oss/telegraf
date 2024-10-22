@@ -57,6 +57,12 @@ func newTestCompatibleCloudWatchMetricStreams() *CloudWatchMetricStreams {
 	return metricStream
 }
 
+func newTestGMDCompatibleCloudWatchMetricStreams() *CloudWatchMetricStreams {
+	metricStream := newTestCloudWatchMetricStreams()
+	metricStream.GMDPluginCompatibility = true
+	return metricStream
+}
+
 func getHTTPSClient() *http.Client {
 	tlsConfig, err := pki.TLSClientConfig().TLSConfig()
 	if err != nil {
@@ -355,6 +361,37 @@ func TestComposeAPICompatibleMetrics(t *testing.T) {
 	acc.AssertContainsTaggedFields(t, "aws_ec2_cpuutilization",
 		map[string]interface{}{"maximum": 0.4366666666666666, "minimum": 0.3683333333333333, "sum": 1.9399999999999997, "samplecount": 5.0},
 		map[string]string{"AutoScalingGroupName": "test-autoscaling-group", "accountId": "546734499701", "region": "us-west-2"},
+	)
+}
+
+func TestComposeGMDPluginCompatibleMetrics(t *testing.T) {
+	metricStream := newTestGMDCompatibleCloudWatchMetricStreams()
+
+	acc := &testutil.Accumulator{}
+	require.NoError(t, metricStream.Init())
+	require.NoError(t, metricStream.Start(acc))
+	defer metricStream.Stop()
+
+	// compose a data object for writing
+	data := data{
+		MetricStreamName: "cloudwatch-metric-stream",
+		AccountID:        "546734499701",
+		Region:           "us-west-2",
+		Namespace:        "AWS/EC2",
+		MetricName:       "CPUUtilization",
+		Dimensions:       map[string]string{"AutoScalingGroupName": "test-autoscaling-group"},
+		Timestamp:        1651679400000,
+		Value:            map[string]float64{"max": 0.4366666666666666, "min": 0.3683333333333333, "sum": 1.9399999999999997, "count": 5.0},
+		Unit:             "Percent",
+	}
+
+	// Compose the metrics from data
+	metricStream.composeMetrics(data)
+
+	acc.Wait(1)
+	acc.AssertContainsTaggedFields(t, "cloudwatch_aws_ec2",
+		map[string]interface{}{"cpu_utilization_maximum": 0.4366666666666666, "cpu_utilization_minimum": 0.3683333333333333, "cpu_utilization_sum": 1.9399999999999997, "cpu_utilization_sample_count": 5.0, "cpu_utilization_average": 0.38799999999999996},
+		map[string]string{"auto_scaling_group_name": "test-autoscaling-group", "account": "546734499701", "region": "us-west-2"},
 	)
 }
 

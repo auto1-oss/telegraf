@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"github.com/influxdata/telegraf/internal"
 	"math"
 	"net"
 	"net/http"
@@ -33,13 +34,14 @@ var sampleConfig string
 const defaultMaxBodySize = 500 * 1024 * 1024
 
 type CloudWatchMetricStreams struct {
-	ServiceAddress   string          `toml:"service_address"`
-	Paths            []string        `toml:"paths"`
-	MaxBodySize      config.Size     `toml:"max_body_size"`
-	ReadTimeout      config.Duration `toml:"read_timeout"`
-	WriteTimeout     config.Duration `toml:"write_timeout"`
-	AccessKey        string          `toml:"access_key"`
-	APICompatability bool            `toml:"api_compatability"`
+	ServiceAddress         string          `toml:"service_address"`
+	Paths                  []string        `toml:"paths"`
+	MaxBodySize            config.Size     `toml:"max_body_size"`
+	ReadTimeout            config.Duration `toml:"read_timeout"`
+	WriteTimeout           config.Duration `toml:"write_timeout"`
+	AccessKey              string          `toml:"access_key"`
+	APICompatability       bool            `toml:"api_compatability"`
+	GMDPluginCompatibility bool            `toml:"gmd_plugin_compatability"`
 
 	requestsReceived selfstat.Stat
 	writesServed     selfstat.Stat
@@ -341,7 +343,8 @@ func (cms *CloudWatchMetricStreams) composeMetrics(data data) {
 	}
 
 	// Rename Statistics to match the CloudWatch API if in API Compatability mode
-	if cms.APICompatability {
+	if cms.APICompatability && !cms.GMDPluginCompatibility {
+
 		if v, ok := fields["max"]; ok {
 			fields["maximum"] = v
 			delete(fields, "max")
@@ -358,10 +361,56 @@ func (cms *CloudWatchMetricStreams) composeMetrics(data data) {
 		}
 	}
 
-	tags["accountId"] = data.AccountID
+	if cms.GMDPluginCompatibility {
+		measurement = sanitizeMeasurement(data.Namespace)
+		metricName := snakeCase(data.MetricName)
+
+		_sum := data.Value["sum"]
+		_count := data.Value["count"]
+		average := float64(0)
+		if _count > 0 {
+			average = _sum / _count
+		}
+
+		fields[metricName+"_average"] = average
+
+		max, ok := fields["max"]
+		if ok {
+			fields[metricName+"_maximum"] = max
+			delete(fields, "max")
+		}
+
+		min, ok := fields["min"]
+		if ok {
+			fields[metricName+"_minimum"] = min
+			delete(fields, "min")
+		}
+
+		count, ok := fields["count"]
+		if ok {
+			fields[metricName+"_sample_count"] = count
+			delete(fields, "count")
+		}
+
+		sum, ok := fields["sum"]
+		if ok {
+			fields[metricName+"_sum"] = sum
+			delete(fields, "sum")
+		}
+	}
+
+	if cms.GMDPluginCompatibility {
+		tags["account"] = data.AccountID
+	} else {
+		tags["accountId"] = data.AccountID
+	}
+
 	tags["region"] = data.Region
 
 	for dimension, value := range data.Dimensions {
+		if cms.GMDPluginCompatibility {
+			dimension = snakeCase(dimension)
+		}
 		tags[dimension] = value
 	}
 
@@ -412,6 +461,19 @@ func (cms *CloudWatchMetricStreams) authenticateIfSet(handler http.HandlerFunc, 
 	} else {
 		handler(res, req)
 	}
+}
+
+func sanitizeMeasurement(namespace string) string {
+	namespace = strings.ReplaceAll(namespace, "/", "_")
+	namespace = snakeCase(namespace)
+	return "cloudwatch_" + namespace
+}
+
+func snakeCase(s string) string {
+	s = internal.SnakeCase(s)
+	s = strings.ReplaceAll(s, " ", "_")
+	s = strings.ReplaceAll(s, "__", "_")
+	return s
 }
 
 func init() {
